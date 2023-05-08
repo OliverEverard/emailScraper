@@ -12,21 +12,26 @@ $pageUrls = $sitemap.SelectNodes("//ns:loc", $nsMgr) | Select-Object -ExpandProp
 
 Write-Output "Found $($pageUrls.Count) URLs in the sitemap."
 
-$emails = @()
+$emailHash = @{}
 
 foreach($pageUrl in $pageUrls) {
-    Write-Output "Processing $pageUrl..."
-    $pageResponse = Invoke-WebRequest $pageUrl -UseBasicParsing
-    $emailMatches = [regex]::Matches($pageResponse.Content, $regexPattern)
+        Write-Output "Processing $pageUrl..."
+        $pageResponse = Invoke-WebRequest $pageUrl -UseBasicParsing
+        $emailMatches = [regex]::Matches($pageResponse.Content, $regexPattern)
     
-    foreach($emailMatch in $emailMatches) {
-        Write-Output $emailMatch.Value
-        $emails += $emailMatch
-    }
-    $emails | ConvertTo-Csv -NoTypeInformation | Out-File $emailFile
+        foreach($emailMatch in $emailMatches) {
+            $email = $emailMatch.Value.Trim()
+            if(-not $emailHash.ContainsKey($email)) {
+                Write-Output $email
+                $emailHash.Add($email, $true)
+            }
+        }
 
+        Add-Content -Path $logFile -Value $pageUrl
 
-    Add-Content -Path $logFile -Value $pageUrl
 }
 
-Write-Output "All email addresses found have been exported to $emailFile."
+$emailArray = $emailHash.Keys | Select-Object @{Name='Email';Expression={$_}}
+$emailArray | Export-Csv $emailFile -NoTypeInformation
+
+Write-Output "All unique email addresses found have been exported to $emailFile."
