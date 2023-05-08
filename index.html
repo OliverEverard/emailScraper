@@ -1,14 +1,18 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Oli Everard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <meta name="viewport" content="width=device-width">
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8368997072131126"
-     crossorigin="anonymous"></script>
-     <link rel="icon" type="image/x-icon" href="https://www.olieverard.co.uk/src/favicon.ico">
-     <script src="https://cdn.jsdelivr.net/npm/@grabzit/js@3.5.2/grabzit.min.js"></script>
-  </head>
+    <head>
+        <title>Oli Everard</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <meta name="viewport" content="width=device-width">
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8368997072131126"
+          crossorigin="anonymous"></script>
+        <link rel="icon" type="image/x-icon" href="https://www.olieverard.co.uk/src/favicon.ico">
+        <script src="https://cdn.jsdelivr.net/npm/@grabzit/js@3.5.2/grabzit.min.js"></script>
+        <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/styles/default.min.css">
+        <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.2.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script>
+      </head>
+      
 
   <body class="bg-white">
     <div id="navbar-container"></div>
@@ -25,18 +29,75 @@
     
 
 <section class="text-gray-600 body-font">
-  <div class="container mx-auto flex px-5 py-24 items-center justify-center flex-col">
-    <div class="text-center lg:w-2/3 w-full">
-      <h1 class="title-font sm:text-4xl text-3xl mb-4 font-medium text-gray-900">Email Scraper Tool</h1>
-      <p class="mb-8 leading-relaxed sm:text-2xl">This tool goes through a sitemap of a website, and returns all unique email addresses it finds on any page. For this tool to work, it neesd to be given a direct link to the sitemap e.g. https://www.example.com/sitemap.xml. It will loop through all nested sitemaps also. It will find some false positives, and take a long time to run for large sites. To use it, download the script and place it in a folder. When it runs, it creates files called email-addresses.csv and discovered-pages.txt in the same folder it is located.</p>
-      <div class="flex justify-center">
-        <a href="https://github.com/OliverEverard/emailScraper/blob/main/scraper.ps1" download>
-            <button class="inline-flex text-white bg-blue-500 border-0 py-2 px-6 focus:outline-none hover:bg-blue-600 rounded text-lg">Go To GitHub Page</button>
-          </a>
+    <div class="container mx-auto flex px-5 py-24 items-center justify-center flex-col">
+      <div class="text-center lg:w-2/3 w-full">
+        <h1 class="title-font sm:text-4xl text-3xl mb-4 font-medium text-gray-900">Email Scraper Tool</h1>
+        <p class="mb-8 leading-relaxed sm:text-2xl">This tool goes through a sitemap of a website, and returns all unique email addresses it finds on any page. For this tool to work, it neesd to be given a direct link to the sitemap e.g. https://www.example.com/sitemap.xml. It will loop through all nested sitemaps also. It will find some false positives, and take a long time to run for large sites. To use it, download the script and place it in a folder. When it runs, it creates files called email-addresses.csv and discovered-pages.txt in the same folder it is located.</p>
+        <div class="flex justify-center">
+          <a href="https://github.com/OliverEverard/emailScraper/blob/main/scraper.ps1" download>
+              <button class="inline-flex text-white bg-blue-500 border-0 py-2 px-6 focus:outline-none hover:bg-blue-600 rounded text-lg">Go To GitHub Page</button>
+            </a>
+        </div>
+        <pre><code class="powershell">
+            function ProcessSitemap($sitemapUrl) {
+                $regexPattern = "\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+                $logFile = "discovered-pages.txt"
+                $emailFile = "email-addresses.csv"
+            
+                $response = Invoke-WebRequest $sitemapUrl -UseBasicParsing
+                $sitemap = [xml]$response.Content
+            
+                $nsMgr = New-Object System.Xml.XmlNamespaceManager -ArgumentList $sitemap.NameTable
+                $nsMgr.AddNamespace("ns", "http://www.sitemaps.org/schemas/sitemap/0.9")
+                $pageUrls = $sitemap.SelectNodes("//ns:loc", $nsMgr) | Select-Object -ExpandProperty "#text"
+            
+                Write-Output "Found $($pageUrls.Count) URLs in the sitemap."
+            
+                $emailHash = @{}
+            
+                foreach($pageUrl in $pageUrls) {
+                    if($pageUrl.EndsWith(".xml")) {
+                        if([Uri]::IsWellFormedUriString($pageUrl, [UriKind]::Absolute)) {
+                            Write-Output "Processing absolute nested sitemap $pageUrl..."
+                            ProcessSitemap($pageUrl)
+                        }
+                        else {
+                            $nestedSitemapUrl = [System.Uri]::new([System.Uri]::new($sitemapUrl), $pageUrl).AbsoluteUri
+                            Write-Output "Processing relative nested sitemap $nestedSitemapUrl..."
+                            ProcessSitemap($nestedSitemapUrl)
+                        }
+                    }
+                    else {
+                        Write-Output "Processing page $pageUrl..."
+                        $pageResponse = Invoke-WebRequest $pageUrl -UseBasicParsing
+                        $emailMatches = [regex]::Matches($pageResponse.Content, $regexPattern)
+                
+                        foreach($emailMatch in $emailMatches) {
+                            $email = $emailMatch.Value.Trim()
+                            if(-not $emailHash.ContainsKey($email)) {
+                                Write-Output $email
+                                $emailHash.Add($email, $true)
+                            }
+                        }
+            
+                        Add-Content -Path $logFile -Value $pageUrl
+                    }
+                }
+            
+                $emailArray = $emailHash.Keys | Select-Object @{Name='Email';Expression={$_}}
+                $emailArray | Export-Csv $emailFile -NoTypeInformation -Append
+            
+                Write-Output "All unique email addresses found have been exported to $emailFile."
+            }
+            
+            $sitemapUrl = Read-Host "Enter the sitemap URL to scrape"
+            ProcessSitemap($sitemapUrl)
+            
+        </code></pre>
       </div>
     </div>
-  </div>
-</section>
+  </section>
+  
 
     </body>
   
